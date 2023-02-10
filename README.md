@@ -9,7 +9,7 @@ automount-shares works with shell scripts in /etc/network/if-up, if-down, which 
  - [`autoumountshares`](etc/network/if-down.d/autoumountshares) will be installed in `/etc/network/if-down.d/` and `/etc/network/if-post-down.d/`
  - [`automountshares-common`](etc/network/if-up.d/automountshares-common) contains functions which are used by the mount- and unmount-scripts. This file will be installed in `/etc/network/if-up.d/`
 
-The scripts will automatically mount/unmount network shares which are tagged inside `/etc/fstab` in a special way (see below: [Description](./automount-shares#description)). If the fstab entry is properly tagged, than the scripts will only try to mount shares if the apropriate route is established / if the target server is up. Unmounting is only done if the target network goes down. If the computer is connected to different networks, than the shares on networks which are still available, remain untouched.
+The scripts will automatically mount/unmount network shares which are tagged inside `/etc/fstab` in a special way (see below: [Description](./README.md#description)). If the fstab entry is properly tagged, than the scripts will only try to mount shares if the apropriate route is established / if the target server is up. Unmounting is only done if the target network goes down. If the computer is connected to different networks, than the shares on networks which are still available, remain untouched.
 
 ## Credits 
 
@@ -28,7 +28,7 @@ After downloading or cloning the repository, call [`install.sh`](install.sh) as 
 ```
 sudo install.sh
 ```
-Then, tag the `fstab` entries for automounting (see below: [Markup](./automount-shares#marking-down-shares-for-automatic-mountingunmounting)). Done.
+Then, tag the `fstab` entries for automounting (see below: [Markup](./README.md#marking-down-shares-for-automatic-mountingunmounting)). Done.
 
 ## Configuration
 
@@ -41,9 +41,9 @@ After installing fping, the scripts can be used out of the box. If you want to, 
      - `2`..`4` increase verbosity.
    - if you use higher levels than 1, you can turn on indenting the log messages by `indent_logs true`.
    - if you want to use other tags for logger than the default ones (the script names), you can call `set_logtag <tag>`
- - selection of the mount points to be handled by the scripts. This tag will be used in `/etc/fstab` (see below: [Description](./automount-shares#description))
+ - selection of the mount points to be handled by the scripts. This tag will be used in `/etc/fstab` (see below: [Description](./README.md#description))
    - adjust `SELECTOR_STRING` in [`automountshares-common`](etc/network/if-up.d/automountshares-common) (default is `"netmount"`)
- - adjust the list of filesystems for which the scripts shall be used (see below: [Description](./automount-shares#description))
+ - adjust the list of filesystems for which the scripts shall be used (see below: [Description](./README.md#description))
    - adjust `MOUNT_TYPES` in [`automountshares-common`](etc/network/if-up.d/automountshares-common) (default is `"fuse.sshfs,cifs"`)
 
 ## Marking down shares for automatic mounting/unmounting
@@ -51,8 +51,8 @@ After installing fping, the scripts can be used out of the box. If you want to, 
 Shares that shall be handled by the mounting/unmounting scripts, must be marked down in `/etc/fstab`. Therefore adjust the mounting options (4th column in `fstab`, usually containing entries like `defaults,noauto`etc.) as follows:
  - add `noauto`, since the shares shall not be mounted by the system but by our scripts
  - add `comment=netmount` to tell the scripts that they shall handle this `fstab` entry. <br/>
-   You can use another tag than `"netmount"`by adjusting `SELECTOR_STRING` in [`automountshares-common`](etc/network/if-up.d/automountshares-common) (see above: [Configuration](./automount-shares#configuration))
- - optionally, `"netmount"`can be followed by a route and a host, e.g. `comment=netmount:192.168.0.0:my.host` or `comment=netmount:192.168.0.0:192.168.0.200`. For details see below: [Description](./automount-shares#description).
+   You can use another tag than `"netmount"`by adjusting `SELECTOR_STRING` in [`automountshares-common`](etc/network/if-up.d/automountshares-common) (see above: [Configuration](./README.md#configuration))
+ - optionally, `"netmount"`can be followed by a route and a host, e.g. `comment=netmount:192.168.0.0:my.host` or `comment=netmount:192.168.0.0:192.168.0.200`. For details see below: [Description](./README.md#description).
 
 ## Description
 
@@ -64,7 +64,7 @@ The scripts traverses `/etc/fstab` line by line. If it finds a mount point whose
  - it looks for an optional **route** entry. This is the IP of the destination network, appended to `"netmount"`, together with a colon, so we get, e.g. `comment=netmount:192.168.0.0`. If such a route entry is found, the script checks for the existance of the route, before attempting to mount the share. The test is done by calling `route -n | awk '{ print $1 }' | grep <route>`
  - it looks for an optional **host** entry. This can be the IP adress or the hostname of the server containing the share. The host entry is either appended to an existing route entry (e.g. `comment=netmount:192.168.0.0:192.168.0.200` or `comment=netmount:192.168.0.0:my.host.name`) or, if the route is omitted, to the "`netmount`" tag, using two colons (e.g. `comment=netmount::192.168.0.200` or `comment=netmount::my.host.name`). If a host entry is found, the script only attempts to mount the share if the given host is up. The test is done by calling `fping -a -r 1 -t 500 <host>`. This is wny you need to install fping if you use host checking.
 
- After the optional tests are passed, the script makes sure that the share is not already mounted. This is done by getting the list of all mounts of the defined `MOUNT_TYPES`, which are by default `fuse.sshfs` and `cifs`. You can extend this list by configuring the variable `MOUNT_TYPES` (see above: [Configuration](./automount-shares#mmm)).
+ After the optional tests are passed, the script makes sure that the share is not already mounted. This is done by getting the list of all mounts of the defined `MOUNT_TYPES`, which are by default `fuse.sshfs` and `cifs`. You can extend this list by configuring the variable `MOUNT_TYPES` (see above: [Configuration](./README.md#configuration)).
 
  If the share is not already mounted, a job is launched to do the mount: `sh -c "mount <mount point>`.
 
