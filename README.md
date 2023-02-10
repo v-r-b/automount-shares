@@ -9,7 +9,11 @@ automount-shares works with shell scripts in /etc/network/if-up, if-down, which 
  - [`autoumountshares`](etc/network/if-down.d/autoumountshares) will be installed in `/etc/network/if-down.d/` and `/etc/network/if-post-down.d/`
  - [`automountshares-common`](etc/network/if-up.d/automountshares-common) contains functions which are used by the mount- and unmount-scripts. This file will be installed in `/etc/network/if-up.d/`
 
-The scripts will automatically mount/unmount network shares which are tagged inside `/etc/fstab` in a special way (see below: [Description](./README.md#description)). If the fstab entry is properly tagged, than the scripts will only try to mount shares if the apropriate route is established / if the target server is up. Unmounting is only done if the target network goes down. If the computer is connected to different networks, than the shares on networks which are still available, remain untouched.
+The scripts will automatically mount/unmount network shares which are tagged inside `/etc/fstab` in a special way (see below: [Markup](./README.md#marking-down-shares-for-automatic-mountingunmounting)). 
+
+**Mounting**: If the fstab entry is properly tagged, than the scripts will only try to mount shares if the apropriate route is established / if the target server is up. 
+
+**Unmounting**: Unmounting is only done if the target network goes down. If the computer is connected to different networks, than the shares on networks which are still available, remain untouched.
 
 ## Credits 
 
