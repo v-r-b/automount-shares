@@ -1,0 +1,148 @@
+#!/bin/sh
+
+## This script attempts to mount network shares which provide
+## passwordless mounting. It processes all entries in /etc/fstab
+## that are marked with an option "comment=netmount" or similar
+## (see below: SELECTOR_STRING).
+##
+## The original idea is published by "Darwin Award Winner"
+## on http://ubuntuforums.org/showthread.php?t=430312
+## (version of July 14th, 2010 at 09:21 PM). 
+## The original version deals only with sshfs and
+## does not take in account wheter all precondtions are met
+## to access a certain share via the network.
+##
+## This generalized and enhanced version allows to mount
+## different types of network shares (e.g. sshfs, cifs)
+## and has optional checking of network routes and server
+## conditions (up/down).
+## Therefore "comment=netmount" can be amended in the following ways:
+##   1) Check for existance of a proper route to the tgt network:
+##   comment=netmount:192.168.0.0
+##   2) Check for route and whether host is up (ip or hostname):
+##   comment=netmount:192.168.0.1:192.168.0.200
+##   comment=netmount:192.168.0.1:hostname.and.domain
+##   3) Check only whether host is up (no route check)
+##   comment=netmount::192.168.0.200
+##   comment=netmount::hostname.and.domain
+## If host checking is used, fping must be installed
+## (sudo apt-get install fping), since ping, according to
+## its manpage, shall not be used in shell scripts. The
+## fping manpage states that fping is OK in scripts.
+
+# Not for loopback
+[ "$IFACE" != "lo" ] || exit 0
+
+## define a number of useful functions
+. /etc/network/if-up.d/automountshares-common
+
+#set_loglevel 1
+#indent_logs false
+#set_logtag automountshares-m
+
+log 1 STARTING $0
+# go through /etc/fstab line per line
+while read fs mp type opts dump pass extra; do
+  # check validity of line
+  if [ -z "$pass" -o -n "$extra" -o "`expr substr ${fs}x 1 1`" = "#" ]; then
+    # line is invalid or a comment, so skip it
+    continue
+
+  # check if the line contains a comment= entry
+  elif mp_comment=`value_from_fs_opts $opts "comment=" ""`; then
+    # Split comment into (mandatory) selector and (optional) network/host
+    mp_selector=`echo "$mp_comment" | awk -F ":" '{ print $1 }'`
+    mp_network=`echo "$mp_comment" | awk -F ":" '{ print $2 }'`
+    mp_host=`echo "$mp_comment" | awk -F ":" '{ print $3 }'`
+
+    #
+    # Check for correct selector to perform an automount
+    #
+    if [ "$mp_selector" = "$SELECTOR_STRING" ]; then
+      log 3 Found line with SELECTOR_STRING $SELECTOR_STRING for mp $mp
+      log 4 ">>" $fs $mp $type $opts $dump $pass "<<"
+      
+      #
+      # Check for existance of route (if asked for)
+      #
+      if [ -n "$mp_network" ]; then
+        # Check is required, so let's do it
+        if [ -n "`route -n | awk '{ print $1 }' | grep "$mp_network"`" ]; then
+          log 3 $mp: required route to $mp_network exists
+        else
+          log 3 not mounting $mp: required route does not exist
+          # in this case: continue to next fstab entry
+          continue
+        fi
+      fi
+
+      #
+      # Check for link to host (if asked for)
+      #
+      if [ -n "$mp_host" ]; then
+        # Check is required, so let's do it
+        if [ -n "`fping -a -r 1 -t 500 $mp_host`" ]; then
+          log 3 $mp: target host $host is up
+        else
+          log 3 $mp: target host $host is not reachable
+          # in this case: continue to next fstab entry
+          continue
+        fi
+      fi
+
+      #
+      # check if the share is already mounted so it will
+      # not be mounted a second time if an additional network
+      # comes up
+      #
+      # get list of mounts
+      mounted=`mount -t $MOUNT_TYPES | awk '{ print $3 }'`
+      mount_found=""
+      # If not empty, look for current $mp
+      [ -n "$mounted" ] && {
+        for mount in $mounted; do
+          # check if this mountpoint is already mounted
+          if [ "$mount" = "$mp" ]; then
+            mount_found=$mp
+            log 3 $mp is already mounted. No need to do anything.
+            break;
+          fi
+        done
+      }
+      [ -n "$mount_found" ] && continue;
+      #
+      # mount the share depending on the uid given in fstab entry
+      #
+      # get the uid of the mount (default is root if no uid is given)
+      mp_uid=`value_from_fs_opts $opts "uid=" "root"`
+      if am_i "$mp_uid"; then
+        # current user owns the mount, so mount it normally
+        log 2 starting process to mount $mp as current user
+        { sh -c "mount $mp" &&
+          log 1 "[ $mp mounted as current user (`id -un`) ]" ||
+          log 1 "[ $mp failed to mount as current user (`id -un`) ]";
+        } &
+      elif am_i root; then
+        # running as root, so sudo mount as user
+        log 2 starting process to call sudo mount $mp as user $mp_uid
+        if has_digits_only "$mp_uid"; then
+          # sudo wants a "#" sign icon front of a numeric uid
+          mp_uid="#$mp_uid"
+        fi
+        { sudo -u "$mp_uid" sh -c "mount $mp" &&
+          log 1 "[ $mp mounted as $mp_uid ]" ||
+          log 1 "[ $mp failed to mount as $mp_uid ]";
+        } &
+      else
+        # otherwise, don't try to mount another user's mount point
+        log 2 "not attempting to mount $mp as other user $mp_uid"
+      fi
+    fi
+  fi
+  # if not an automount line, do nothing
+done </etc/fstab
+
+# wait for mount jobs to terminate
+wait
+log 1 DONE with $0
+exit 0

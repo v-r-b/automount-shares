@@ -1,0 +1,203 @@
+##
+## This file contains several useful functions.
+## It will be sourced by the automount- and
+## autoumountshares scripts.
+##
+## Thanks to "Darwin Award Winner" for publishing
+## the functions is_a_number, am_i, user_from_uid
+## and uid_from_fs_opts, which habe been used as a start.
+## on http://ubuntuforums.org/showthread.php?t=430312
+## (version of July 14th, 2010 at 09:21 PM)
+##
+
+# First part of the comment to indicate that an entry shall be processed
+SELECTOR_STRING="netmount"
+# Types of network mounted filesystems this script shall deal with
+MOUNT_TYPES="fuse.sshfs,cifs"
+
+# Blanks to indent log messages according to their level, if wanted
+LOG_INDENTATION="                                                        ";
+# Indentation ist false by default
+USE_LOG_INDENTATION=false
+
+LOGLEVEL=1
+##### set_loglevel
+## sets the log level for script execution.
+## loglevel 0 --> no logging at all
+## loglevel 1 --> normal logging (default)
+## loglevel 2 --> more verbose logging
+## all loglevels above --> be even more and more verbose
+##
+## Parameters:
+## - $1 log level for script execution
+## See:
+## - set_logtag
+## - indent_logs
+## - log
+set_loglevel () {
+  LOGLEVEL=$1
+  return 0
+}
+
+##### indent_logs
+## switch indentation of log messages on/off
+## if on, the messages will be indented according
+## to their message log level ($1 in log())
+##
+## Parameters:
+## - $1 true or false to switch on/off
+## See:
+## - set_logtag
+## - set_loglevel
+## - log
+indent_logs () {
+  USE_LOG_INDENTATION=$1
+  return 0
+}
+
+## Default tag is basename of running script
+LOGTAG="`basename $0`"
+##### set_logtag
+## sets the log tag for script execution.
+## Default log tag is `basename $0`
+##
+## Parameters:
+## - $1 log tag for script execution
+## See:
+## - set_loglevel
+## - indent_logs
+## - log
+set_logtag () {
+  LOGTAG=$1
+  return 0
+}
+
+##### log
+## prints message to system logfile using logger -t $LOGTAG.
+## Parameters:
+## - $1 message log level
+## - all others - log message
+## See:
+## - set_logtag
+## - set_loglevel
+## - indent_logs
+log () {
+  # No logging at all if LOGLEVEL == 0 or negative
+  [ $LOGLEVEL -le 0 ] && return
+  # Otherwise log message if message level is less or equal than script's log level.
+  if [ $1 -le $LOGLEVEL ]; then
+    local indent="";
+    if $USE_LOG_INDENTATION; then
+      local indent_length=`expr $1 - 1`
+      indent_length=`expr $indent_length \* 3`
+      indent=`expr substr "$LOG_INDENTATION" 1 $indent_length`
+    fi
+    shift
+    logger -t $LOGTAG "${indent}$*"
+  fi
+  return 0
+}
+
+##### has_digits_only
+##
+## checks whether the input contains nothing but digits.
+## renamed the original version "isa_number" 
+## (source: "Darwin Award Winner" / see above)
+##
+## Parameters:
+## - $1 - arbitrary input string
+## Returns:
+## - true if input contains nothing but the digits 0-9, 
+## - false otherwise
+has_digits_only () {
+  ! echo $1 | egrep -q '[^0-9]'
+  return $?
+}
+
+##### am_i
+##
+## checks whether the  given uid or username is that of the current user
+## (source: "Darwin Award Winner" / see above)
+##
+## Parameters:
+## - $1 - numeric uid oder username
+## Returns:
+## - true if the given uid or username is that of the current user,
+## - false otherwise
+am_i () {
+  [ "$1" = "`id -u`" ] || [ "$1" = "`id -un`" ]
+}
+
+##### user_is_known
+##
+## Takes a username or uid and looks for it in /etc/passwd.
+## Echoes the user*name* if the corresponding entry can be found.
+## renamed the original version "user_from_uid" 
+## (source: "Darwin Award Winner" / see above)
+##
+## Parameters:
+## - $1 - numeric uid oder username
+## Returns:
+## - true if the given uid or username is in /etc/passwd
+##        in this case the user*name* is echoed
+## - false otherwise (no echo)
+user_is_known () {
+  if has_digits_only "$1"; then
+    # numeric user id was given as $1.
+    # look for the corresponding name in /etc/passwd
+    local IFS=":"
+    while read name x uid the_rest; do
+      if [ "$1" = "$uid" ]; then
+        echo "$name"
+        return 0
+      fi
+    done </etc/passwd
+  else
+    # username was given as $1.
+    # look for it in /etc/passwd
+    if grep -q "^${1}:" /etc/passwd; then
+      echo "$1"
+      return 0
+    fi
+  fi
+  # if nothing was found, return false
+  return 1
+}
+
+##### value_from_fs_opts
+##
+## Parses a string of comma-separated fstab options and looks for
+## the specified option entry. If found, the contents of the
+## entry (the part between the entry's name and the next comma/EOL)
+## Example: fs_opts="uid=1000,noauto,defaults"
+##   Looking for "uid=" echoes "1000", function returns true,
+##   Looking for "noauto" echoes "", function returns true
+##   Looking for "ro" echoes the given default string, function returns false.
+## (generalized version of: uid_from_fs_opts by "Darwin Award Winner")
+##
+## Parameters:
+## - $1 - comma separated list of fstab options, e.g. from /etc/fstab
+## - $2 - name of the option we are looking for
+## - $3 - default value to be echoed if the option can not be found
+## Returns:
+## - true if a corresponding entry has been found. 
+##        in this case the contents of the entry are echoed.
+## - false otherwise (default value $3 is echoed)
+value_from_fs_opts () {
+  # get portion from "$2" until next comma or EOL
+  local entry=`echo $1 | egrep -o "$2[^,]*"`
+  if [ -z "$entry" ]; then
+    # no entry was found, so echo default value ($3) and return false
+    echo $3
+    return 1
+  else
+    # delete the tag "$2" at the beginning
+    local tag_length=`expr length $2`
+    local entry_start=`expr $tag_length + 1`
+    local entry_length=`expr length $entry - $tag_length`
+    entry=`expr substr $entry $entry_start $entry_length`
+    # echo the remains and return true
+    echo $entry
+    return 0
+  fi
+}

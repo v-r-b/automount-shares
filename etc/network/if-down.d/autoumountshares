@@ -1,0 +1,107 @@
+#!/bin/sh
+
+## This script corresponds to aoutmountshares and tries
+## to unmount all shares that have been automatically
+## mounted, if the route to the target network vanishes
+## (e.g. if a network cable is plugged out)
+##
+## The original idea is published by "Darwin Award Winner"
+## on http://ubuntuforums.org/showthread.php?t=430312
+## (version of July 14th, 2010 at 09:21 PM). 
+## The original version deals only with sshfs and
+## unmounts all sshfs shares regardless whether they
+## have been mounted automatically or not.
+##
+## This generalized and enhanced version works with the
+## corresponding automountshares script.
+
+# Not for loopback
+[ "$IFACE" != "lo" ] || exit 0
+
+## define a number of useful functions
+. /etc/network/if-up.d/automountshares-common
+
+##### start_umount
+## starts a process which unmounts the given mount point
+##
+## Parameters:
+## - $1 mountpoint to be unmounted
+## Returns:
+## - status of process started
+start_unmount () {
+  log 2 starting process to unmount $1
+  { sh -c "umount -l $1" &&
+    log 1 "[ $mp unmounted ]" ||
+    log 1 "[ $mp failed to unmount ]";
+  } &
+}
+
+#set_loglevel 1
+#indent_logs false
+#set_logtag automountshares-u
+
+log 1 STARTING $0
+# Get list of all file systems of proper types
+mounted=`mount -t $MOUNT_TYPES | awk '{ print $3 }'`
+# If not empty, try to unmount automount volumes from the list
+[ -n "$mounted" ] && {
+  # go through /etc/fstab line per line
+  while read fs mp type opts dump pass extra; do
+    # check validity of line
+    if [ -z "$pass" -o -n "$extra" -o "`expr substr ${fs}x 1 1`" = "#" ]; then
+      # line is invalid or a comment, so skip it
+      continue
+  
+    # check if the line contains a comment= entry
+    elif mp_comment=`value_from_fs_opts $opts "comment=" ""`; then
+      # Split comment into (mandatory) selector and (optional) network
+      # Omit part 3 (host), since this is of no use here
+      mp_selector=`echo "$mp_comment" | awk -F ":" '{ print $1 }'`
+      mp_network=`echo "$mp_comment" | awk -F ":" '{ print $2 }'`
+
+      #
+      # Check for correct selector to perform an automount/-unmount
+      #
+      if [ "$mp_selector" = "$SELECTOR_STRING" ]; then
+        log 3 Found line with SELECTOR_STRING $SELECTOR_STRING for mp $mp
+        log 4 ">>" $fs $mp $type $opts $dump $pass "<<"
+
+        # check if the mount point is in the list of active mounts
+        mp_in_mounts=false
+        for mount in $mounted; do
+          # check if this is a candidate for unmounting
+          if [ "$mount" = "$mp" ]; then
+            #
+            # Check for existance of route (if asked for)
+            #
+            if [ -n "$mp_network" ]; then
+              # Check for existance of route to desired network (if given)
+              if [ -n "`route -n | tail +3 | awk '{ print $1 }' | grep "$mp_network"`" ]; then
+                log 3 $mp: required route to $mp_network still exists. No reason to unmount!
+                continue
+              else
+                log 1 $mp: required route to $mp_network is no longer available. Unmounting!
+                start_unmount $mount
+              fi
+            #
+            # no route given. unmount regardless of specific network change
+            #
+            else  
+              log 1 $mp: Unmounting!
+              start_unmount $mount
+            fi
+            #
+            # continue traversing mount list (do not leave for loop here)
+            # since a share could be mounted twice
+            #
+          fi
+        done
+        if [ ! mp_in_mounts ]; then
+          log 3 $mp was not mounted. No need to do anyting.
+        fi
+      fi
+    fi
+  done </etc/fstab
+}
+log 1 DONE with $0
+exit 0
